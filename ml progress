@@ -1,0 +1,175 @@
+import os
+import cv2
+from pytube import YouTube
+from pytube.exceptions import AgeRestrictedError
+import torch
+import torchvision.models.video as models
+import torchvision.transforms as transforms
+from PIL import Image
+import numpy as np
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
+import numpy as np
+from sklearn.cluster import KMeans
+from tqdm import tqdm
+# Define your YouTube credentials (your Google account email and password)
+# youtube_email = ""
+# youtube_password = ""
+# Define the directory where you want to store downloaded videos and frames
+download_dir = "Videos"
+output_dir = "features"
+# Create directories if they don't exist
+os.makedirs(download_dir, exist_ok=True)
+os.makedirs(output_dir, exist_ok=True)
+# Sample dataset containing video information
+dataset = [
+{"video_id": "zIEY1hKH6aQ", "concept": "desert", "group": "racing_desert"},
+{"video_id": "6eCgHq_7GPU", "concept": "running", "group": "run_venice"},
+{"video_id": "xvfC2f0Cxx8", "concept": "riding bike", "group": "ride-bike_beach"}
+# Add more video information as needed
+]
+def progress_func(stream, chunk, bytes_remaining):
+# Calculate and print the download progress
+total_size = stream.filesize
+downloaded = total_size - bytes_remaining
+percent = (downloaded / total_size) * 100
+print(f"Downloaded: {percent:.2f}%")
+def complete_func(stream, file_handle):
+print("Download completed!")
+# Function to download videos from YouTube
+def download_video(video_id, download_dir):
+yt = YouTube(f"https://www.youtube.com/watch?v={video_id}", on_progress_callback=progress_func,
+on_complete_callback=complete_func, use_oauth=True, allow_oauth_cache=True)
+# Log in to YouTube to bypass age restriction
+# yt.login(youtube_email, youtube_password)
+try:
+stream = yt.streams.first()
+stream.download(output_path=download_dir)
+except AgeRestrictedError:
+print("Video is still age-restricted. Please check your YouTube credentials or verify your age on
+YouTube.")
+# Function to extract frames from videos
+def extract_frames(video_path, output_dir):
+cap = cv2.VideoCapture(video_path)
+frame_count = 0
+while True:
+ret, frame = cap.read()
+if not ret:
+break
+frame_count += 1
+frame_filename = os.path.join(output_dir, f"frame_{frame_count:04d}.jpg")
+cv2.imwrite(frame_filename, frame)
+cap.release()
+# Define a function to calculate Mean Average Precision (MAP)
+def calculate_map(predictions, ground_truth):
+# Calculate the Mean Average Precision (MAP) for a set of predictions.
+num_videos = len(predictions)
+average_precision_scores = []
+for i in range(num_videos):
+prediction = predictions[i]
+gt_labels = ground_truth[i]
+num_correct = 0
+precision_sum = 0.0
+for j, label in enumerate(prediction):
+if label in gt_labels:
+num_correct += 1
+precision = num_correct / (j + 1)
+precision_sum += precision
+if num_correct > 0:
+average_precision = precision_sum / num_correct
+average_precision_scores.append(average_precision)
+if len(average_precision_scores) == 0:
+return 0.0
+map_score = np.mean(average_precision_scores)
+return map_score
+# Function to perform video summarization
+def video_summarization(frame_features, num_summary_frames):
+kmeans = KMeans(n_clusters=num_summary_frames, random_state=0).fit(frame_features)
+summary_indices = kmeans.cluster_centers_.argsort()[:, :num_summary_frames]
+return summary_indices
+
+# Function to evaluate video summarization
+
+def evaluate_summarization(predictions, ground_truth):
+
+# Calculate Mean Average Precision (MAP) for each video
+
+map_scores = []
+
+for i in range(len(predictions):
+
+map_score = calculate_map(predictions[i], ground_truth[i])
+
+map_scores.append(map_score)
+
+# Calculate the mean MAP score
+
+mean_map_score = np.mean(map_scores)
+
+return mean_map_score
+
+# Define the number of summary frames per video
+
+num_summary_frames = 10
+
+# Iterate through videos and perform video summarization
+
+predictions = []
+
+ground_truth = []
+
+for video_name in os.listdir(output_dir):
+
+video_dir = os.path.join(output_dir, video_name)
+
+video_frames = [os.path.join(video_dir, frame) for frame in os.listdir(video_dir)]
+
+# Load features for each frame
+
+frame_features = []
+for frame_path in video_frames:
+features = np.load(frame_path)
+frame_features.append(features)
+frame_features = np.stack(frame_features)
+# Perform video summarization
+summary_indices = video_summarization(frame_features, num_summary_frames)
+predictions.append(summary_indices)
+# Define the ground-truth (replace with actual ground-truth as needed)
+ground_truth_indices = np.random.choice(len(video_frames), num_summary_frames, replace=False)
+ground_truth.append(ground_truth_indices)
+# Evaluate the video summarization
+mean_map_score = evaluate_summarization(predictions, ground_truth)
+print(f"Mean Average Precision (MAP) for video summarization: {mean_map_score:.2f}")
+# Load the pretrained C3D model from torchvision
+c3d_model = models.mc3_18(weights='mc3_18', num_classes=400)
+# Specify the path to the directory containing your video frames
+video_frames_dir = "features"
+# Create an instance of your custom dataset
+data_paths = [os.path.join(video_frames_dir, frame) for frame in os.listdir(video_frames_dir)]
+data_transform = transforms.Compose([
+transforms.ToPILImage(),
+transforms.Resize((112, 200)),
+
+transforms.ToTensor(),
+transforms.Normalize(mean=[0.43216, 0.394666, 0.37645], std=[0.22803, 0.22145, 0.216989])
+])
+dataset = VideoFrameDataset(data_paths=data_paths, transform=data_transform)
+# Create a DataLoader for batch processing
+dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+# Define the optimizer and loss function
+optimizer = optim.SGD(c3d_model.parameters(), lr=learning_rate, weight_decay=weight_decay,
+momentum=momentum)
+criterion = torch.nn.CrossEntropyLoss()
+# Fine-tune the model for video summarization
+for repetition in range(num_repetitions):
+for epoch in range(num_epochs):
+for batch_inputs, batch_labels in dataloader:
+# Forward pass
+outputs = c3d_model(batch_inputs)
+loss = criterion(outputs, batch_labels)
+# Backward pass and optimization
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()
+# Save the fine-tuned model for later use
+torch.save(c3d_model.state_dict(), 'fine_t
